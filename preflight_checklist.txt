@@ -1,0 +1,111 @@
+
+
+//------------------------------------------------------------------------------------------------
+//                        PHASE 1:
+//                     Implementation
+//------------------------------------------------------------------------------------------------
+// ✔ //
+////////////////////////
+// ✔ //  1. You should write the SQL to create a database called workers .
+               CREATE DATABASE IF NOT EXISTS workers WITH ENCODING 'UTF8';
+// ✔ //  2. The database should have at least two tables called Employees & Tasks
+// ✔ //  3. Employees should have a unique identifier that is not their ID: 
+               CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+      //            ^^^ This lets us properly assign the uuid column types.
+// ✔ //  4. Employees can work on multiple tasks & 
+// ✔ //  5. Tasks can be worked on by multiple employees:
+      //    The tasks.assignedto[] field below is cast as an array so we can use a join on tasks where empid=any(assignedto[])
+               CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+               CREATE TABLE IF NOT EXISTS employees
+                    (
+                        uniqid uuid DEFAULT uuid_generate_v4 () NOT NULL,
+                        empid serial NOT NULL,
+                        fname varchar(255) NOT NULL,            
+                        lname varchar(255) NOT NULL,            
+                        PRIMARY KEY ("uniqid")                  
+                    );                                          
+
+                    CREATE TABLE IF NOT EXISTS tasks
+                    (
+                        unitid uuid DEFAULT uuid_generate_v4 (),
+                        taskid serial NOT NULL,
+                        assignedto integer[],                   
+                        title varchar(255) NOT NULL,            
+                        privacy integer,
+                        PRIMARY KEY (unitid)
+               );
+
+// ✔ // 6. Some tasks are considered private tasks, these should be omitted from all search results:
+               tasks.privacy key: 0 = (Public) or 1 = (Private)
+// ✔ //    a bool would be appropriate for true/false cases, but int allows for 
+     //     more definable geometry for future assignment of security controls
+// ✔ // 7. Create a method in which to seed the database with tasks and employees
+     //  I did this in sql on the console, but it's simple enough to add it in the program as a query:
+
+            sqlSeed  :=  db.Query("INSERT INTO employees (empid, fname, lname)
+                         VALUES ('1','jane','smith'),
+                                ('2','billy','jones'),
+                                ('3','lee','irving'),
+                                ('4','sarah','pilsner'),
+                                ('5','guy','young'),
+                                ('6','lady','oldman');
+
+                        INSERT INTO tasks (assignedto, title, privacy)
+                        VALUES ('{1, 2, 3, 4, 5, 6}','scrum meeting','0'),
+                                ('{4,5,6}','interview','0'),
+                                ('{1,2,6}','documentation','0'),
+                                ('{1, 3}','secret docker file generation','1'),
+                                ('{2}','a/b testing','0'),
+                                ('{1, 2}','secret scrum meeting','1'),
+                                ('{6}','push dev to prod','0'),
+                                ('{4, 6}','secret scrum meeting','1'),
+                                ('{}','vacation','0');
+                        ");
+      //
+// ✔ // 8. Results returned over the API be returned from elasticsearch , not postgres.
+      //		apiListener.HandleFunc("/search/tasks/name/{title}", returnSingleTask_esapi)
+                https:'//'localhost:8080/search/tasks/name/scrum
+                  
+     //------------------------------------------------------------------------------------------------
+     //                        PHASE 2:
+     //                      Requirements
+     //------------------------------------------------------------------------------------------------
+     //
+// ✔ //  1. provide a method in which to authenticate with your API endpoints.
+                https:'//'testuser:testpass@localhost:8080/search/tasks/name/scrum
+
+// ✔ // 2. provide an Elasticsearch API endpoint to search for employees by their unique identifier
+                apiListener.HandleFunc("/employees/uuid/{uniqid}", returnSingleByUUID) ✔
+                localhost:8080/employees/uuid/{uniqid}
+
+// ✔ // 3. provide an Elasticsearch API endpoint to search for a task by its name
+                apiListener.HandleFunc("/tasks/name/{title}", returnSingleTask)
+                localhost:8080/tasks/name/{title}
+
+// ✔ // 4. provide an Elasticsearch API endpoint to search all employees working on a specific task
+                apiListener.HandleFunc("/whois", returnPairedTask_byID)
+                localhost:8080/whois/{taskid}
+
+// ✔ // 4b. Here are some PGSQL endpoints for debugging!
+                apiListener.HandleFunc("/", homePage)
+                apiListener.HandleFunc("/employees", returnAllEmployees)
+                apiListener.HandleFunc("/employees/uuid/{uniqid}", returnSingleByUUID)
+                apiListener.HandleFunc("/employees/empid/{empid}", returnSingleEmployee)
+                apiListener.HandleFunc("/tasks", returnPublicTasks)
+                apiListener.HandleFunc("/tasks/name/{title}", returnSingleTask)
+                apiListener.HandleFunc("/whois", returnAllPairedTasks)
+                apiListener.HandleFunc("/whois/{taskid}", returnPairedTask_byID)
+
+// ✔ // 5. provide instructions to run/bootstrap the application
+                                see the other readme!
+     //-------------------------------------------------------------------------------//
+     // You must write a test suite for the above scenarios and have your tests pass. //
+     //-------------------------------------------------------------------------------//
+     uuid endpoint test: http://localhost:8080/search/employees/uuid/bcef62b3-3f83-4c4d-8c47-2ee4bc3a5987
+     task endpoint test: http://localhost:8080/search/tasks/name/scrum
+
+
+                                see file main_test.go
+     //-------------------------------------------------------------------------------//
+     //                                 --rpw                                         //
+     //-------------------------------------------------------------------------------//

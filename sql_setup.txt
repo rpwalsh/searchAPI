@@ -1,0 +1,274 @@
+//  Steps to install and run the search application:
+//  #################################################
+//  ##              ## --rpw-- ##                  ##
+//  #################################################
+//
+//      Assumptions: Elastic, Postgresql, & GoLand/Intelli-J[ultimate or free trial]
+//      I used elastic.io, pgAdmin 4, the pq, elasticsearch, and gorilla/mux libraries
+//      vars can be set at the top of the file 'main.go'
+//      It should just work, but here's some rough documentation:
+//
+//  TO COMPILE:
+//      add module support to your go Application
+        go mod init modules/pq
+
+//  Be sure your go build has this lib for postgresql support:
+//
+    	go get -t github.com/lib/pq
+
+// be sure your go build has this lib for elasticsearch support:
+        go get -t github.com/elastic/go-elasticsearch/v8"
+
+// you can install pgsql via docker, and I only really included this here in case i need it later:
+
+// Download postgres latest image     // username and pw defaults to postgres/postgres with these docker calls
+        docker pull postgres:latest
+
+// Create and run a container with postgres image
+        docker run --name psql -e POSTGRES_PASSWORD=[your_password] -d postgres //
+
+// Connect to Postgres in docker container
+        docker exec -it psql psql -U [postgres_user]
+
+// I did not use docker, i used a local install on windows to do this, so ymmv. 
+// the assumption is that you already have the servers already set up somewhere
+
+// create the the main database.
+CREATE DATABASE workers WITH ENCODING 'UTF8' LC_COLLATE='POSIX' LC_CTYPE='POSIX';
+
+//switch to the db we just created
+
+\c workers
+
+// create the necessary tables
+CREATE TABLE employees (uniqid UUID, empid INT, tasks INT[],  fname VARCHAR(255),  lname VARCHAR(255));
+CREATE TABLE tasks (unitid UUID, taskid INT,  employees INT[],  title VARCHAR(255),  priority VARCHAR(255),  privacy INT(1));
+
+// if you want to get technical, do that ^^ this way vv but see the note below
+
+CREATE TABLE IF NOT EXISTS employees
+(
+    uniqid uuid DEFAULT uuid_generate_v4 () NOT NULL,                # <-- this may error, see below
+    empid integer NOT NULL,                                          
+    fname varchar(255) NOT NULL,                                     
+    lname varchar(255) NOT NULL,
+    PRIMARY KEY ("uniqid")
+); 
+
+CREATE TABLE IF NOT EXISTS tasks
+(
+    unitid uuid DEFAULT uuid_generate_v4 (),
+    taskid serial NOT NULL,
+    assignedto integer[],
+    title varchar(255) NOT NULL,
+    privacy integer,
+    PRIMARY KEY (unitid)
+);
+
+
+//  *******  uniqid uuid DEFAULT uuid_generate_v4 () NOT NULL,
+                                             /\
+                                            //\\ this line may error, and you may need
+                                            //\\ to edit this in pgAdmin depending on your
+                                            //\\ pgsql installation config.
+//
+// you may need to try:
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+// let's prepopulate those tables with some data. 
+// and yes, we could do some JS magic or something to get more/prettier data, 
+// but lets start with static sample stuff:
+
+INSERT INTO employees (empid, fname, lname) 
+    VALUES ('1','jane','smith'), 
+	('2','billy','jones'), 
+	('3','lee','irving'), 
+	('4','sarah','pilsner'), 
+	('5','guy','young'), 
+	('6','lady','oldman');
+
+INSERT INTO tasks (assignedto, title, privacy)
+    VALUES ('{1, 2, 3, 4, 5, 6}','scrum meeting','0'), 
+	('{4,5,6}','interview','0'),
+	('{1,2,6}','documentation','0'),
+	('{1, 3}','secret docker file generation','1'),
+	('{2}','a/b testing','0'),
+	('{1, 2}','secret scrum meeting','1'),
+	('{6}','push dev to prod','0'),
+	('{4, 6}','secret scrum meeting','1'),
+	('{}','vacation','0');
+//  we need to update elastic as an index, every time something changes in the PGSQL DB
+//  So: lets make an event trigger that we can call from the listener thread:
+
+CREATE OR REPLACE FUNCTION notify_event() RETURNS TRIGGER AS $$
+    DECLARE
+        data json;
+        notification json;
+        id integer;
+    BEGIN
+        -- Convert the old or new row to JSON, based on the kind of action.
+        -- Action = DELETE?             -> OLD row
+        -- Action = INSERT or UPDATE?   -> NEW row
+        IF (TG_OP = 'DELETE') THEN
+            data = row_to_json(OLD);
+            id = OLD.taskid;
+        ELSE
+            data = row_to_json(NEW);
+            id = NEW.taskid;
+        END IF;
+        -- Contruct the notification as a JSON string.
+        notification = json_build_object(
+                          'table',TG_TABLE_NAME,
+                          'action', TG_OP,
+                          'id', id,
+                          'data', data);
+        -- Execute pg_notify(channel, notification)
+        PERFORM pg_notify('events',notification::text);
+        -- Result is ignored since this is an AFTER trigger
+        RETURN NULL;
+    END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER tasks_notify_event
+AFTER INSERT OR UPDATE OR DELETE 
+ON public.tasks
+FOR EACH ROW 
+EXECUTE PROCEDURE public.notify_event();
+
+//and for the employees table
+
+CREATE OR REPLACE FUNCTION notify_event2() RETURNS TRIGGER AS $$
+    DECLARE
+        data json;
+        notification json;
+        id integer;
+    BEGIN
+        -- Convert the old or new row to JSON, based on the kind of action.
+        -- Action = DELETE?             -> OLD row
+        -- Action = INSERT or UPDATE?   -> NEW row
+        IF (TG_OP = 'DELETE') THEN
+            data = row_to_json(OLD);
+            id = OLD.empid;
+        ELSE
+            data = row_to_json(NEW);
+            id = NEW.empid;
+        END IF;
+        -- Contruct the notification as a JSON string.
+        notification = json_build_object(
+                          'table',TG_TABLE_NAME,
+                          'action', TG_OP,
+                          'id', id,
+                          'data', data);
+        -- Execute pg_notify(channel, notification)
+        PERFORM pg_notify('events',notification::text);
+        -- Result is ignored since this is an AFTER trigger
+        RETURN NULL;
+    END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER employees_notify_event
+AFTER INSERT OR UPDATE OR DELETE
+ON public.employees
+FOR EACH ROW
+EXECUTE PROCEDURE public.notify_event2();
+
+// that's the database setup.
+// in order to make the elastic search magic happen, we need to do a thing in kibana (or curl):
+
+PUT /newindex
+{
+  "mappings": {
+    "properties": {
+      "obj1": {
+        "type": "nested"
+      }
+    }
+  }
+}
+// what we're doing in the subroutine is essentially (and very roughly)
+GET /newindex/_search
+{
+  "query": {
+    "nested": {
+      "path": "obj1",
+      "query": {
+        "bool": {
+          "must": [
+            { "match": { "obj1.employees": "empid" } },
+            { "range": { "obj1.tasks.assignedto": { "empid": {searchterm} } } }
+          ]
+        }
+      },
+      "score_mode": "avg"
+    }
+  }
+}
+
+there's some more dev notes below,
+// but that pretty much covers everything that isn't in the other docs!
+//
+// it really ought to just work if you open main.go and go.mod in goLand and start debugging!
+// Thanks for the fun puzzle to solve!. Excellent search API test!
+// I hope to hear back from you soon. --ryan
+
+////////////////
+// dev notes: //
+//////////////////////////////////////////////////////////////////
+
+// we're gonna need a join to make this work, it'll be found in the api.go file
+// we could use a third table, but we'll just handle the array like this:
+
+			SELECT *
+			FROM employees
+			inner join tasks on empid=any(assignedto)
+
+// we could also write some fancier stuff to get rid of the unnecessary nonsense,
+SELECT * FROM employees INNER JOIN tasks ON empid=ANY(assignedto) WHERE title like '%scrum%'
+SELECT * FROM employees INNER JOIN tasks ON empid=ANY(assignedto) WHERE uniqid='b98291a1-69e9-4030-9afd-fd23a4d93f0f'
+
+// vv here is the psql to get public tasks
+SELECT  title, empid, fname, lname FROM employees INNER JOIN tasks ON empid=ANY(assignedto) WHERE privacy != 1 
+
+// vv here is the psql to get private tasks
+SELECT  title, empid, fname, lname FROM employees INNER JOIN tasks ON empid=ANY(assignedto) WHERE privacy != 0 AND title IN ('$1');
+
+//Elastic Mappings (if you need them) us Kibana to get the es cluster index to recast the UUID data type as 'Keyword'
+
+    PUT /test_index
+{
+  "mappings": {
+    "properties": {
+        "unitid":{"type":"keyword"},
+        "taskid":{"type":"integer"},
+        "assignedto":{"type":"integer"},
+                "title":{"type":"text"},
+                        "privacy":{"type":"integer"},   
+    }
+  }
+}
+// this is the schema if you need it.
+[
+    {
+        "database": "workers",
+        "index": "newindex",
+        "nodes": {
+            "table": "employees",
+            "columns": [
+                "uniqid",
+                "empid",
+                "integer",
+                "title",
+                "fname",
+                "lname"
+                ],
+            "table": "tasks",
+            "columns": [
+                "unitid",
+                "taskid",
+                "assignedto",
+                "title",
+                "privacy"
+                ],
+        }
+    }
+]
