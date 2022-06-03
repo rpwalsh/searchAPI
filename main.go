@@ -60,8 +60,8 @@ type Message struct {
 const (
 	host     = "localhost"
 	port     = 5432
-	psqluser = "postgres"
-	password = "postgres"
+	psqluser = "postgres" // change to your db user
+	password = "postgres" // change to your db pass
 	dbname   = "workers"
 )
 
@@ -70,19 +70,19 @@ var (
 		"password=%s dbname=%s sslmode=disable",
 		host, port, psqluser, password, dbname)
 
-	// https                 all the other normal URL stuff								elastic endpoint
-	// transport-----v      user:pass    @ elastic URL                                 /index/_doc
 	elasticIndex = "https://test:ryantest@cointest.es.us-central1.gcp.cloud.es.io:9243/newindex/_doc"
-	//http://localhost:9200/{index_name}/_doc" /// NO TRAILING SLASHES!!!
+	//              http://localhost:9200/{index_name}/_doc" /// NO TRAILING SLASHES!!!
+
 	esURLasArray = []string{elasticIndex}
 	myIndex      = "newindex"
 	ctx          = context.Background()
 	cfg          = elasticsearch.Config{
+
+		//Username:  "<your Elastic Cluster user>>",
+		//Password:  "<your Elastic Cluster pass>>",
+		CloudID: "<your elastic.io cloud id>",
+		APIKey:  "<your elastic.io cloud api key>",
 		//Addresses: esURLasArray,
-		//Username:  "test",
-		//Password:  "ryantest",
-		CloudID: "cointest:dXMtY2VudHJhbDEuZ2NwLmNsb3VkLmVzLmlvJDcxY2I3N2ZkYTUwZDQxMjQ4YWQzNDlkMTFjMzAyZmEzJGYyNTQwMmJiNTdkMzQ0NTg5NmY2NmM0MTY3MDE2YTJj",
-		APIKey:  "emR5ekI0RUJKUlZnRGc2QURHX286bFVYSnBoZXVUd3Fqel9pek5aQnplQQ==",
 	}
 
 	fieldName  = "title" // static test input for searchESAPI.go
