@@ -6,6 +6,7 @@
 //      Assumptions: Elastic, Postgresql, & GoLand/Intelli-J[ultimate or free trial]
 //      I used elastic.io, pgAdmin 4, the pq, elasticsearch, and gorilla/mux libraries
 //      vars can be set at the top of the file 'main.go'
+//      i used elastic.io and a local install of pgsql.
 //      It should just work, but here's some rough documentation:
 //
 //  TO COMPILE:
@@ -173,39 +174,7 @@ ON public.employees
 FOR EACH ROW
 EXECUTE PROCEDURE public.notify_event2();
 
-// that's the database setup.
-// in order to make the elastic search magic happen, we need to do a thing in kibana (or curl):
-
-PUT /newindex
-{
-  "mappings": {
-    "properties": {
-      "obj1": {
-        "type": "nested"
-      }
-    }
-  }
-}
-// what we're doing in the subroutine is essentially (and very roughly)
-GET /newindex/_search
-{
-  "query": {
-    "nested": {
-      "path": "obj1",
-      "query": {
-        "bool": {
-          "must": [
-            { "match": { "obj1.employees": "empid" } },
-            { "range": { "obj1.tasks.assignedto": { "empid": {searchterm} } } }
-          ]
-        }
-      },
-      "score_mode": "avg"
-    }
-  }
-}
-
-there's some more dev notes below,
+// that's the database setup. there's some more dev notes below,
 // but that pretty much covers everything that isn't in the other docs!
 //
 // it really ought to just work if you open main.go and go.mod in goLand and start debugging!
@@ -230,52 +199,10 @@ SELECT * FROM employees INNER JOIN tasks ON empid=ANY(assignedto) WHERE uniqid='
 // vv here is the psql to get public tasks
 SELECT  title, empid, fname, lname FROM employees INNER JOIN tasks ON empid=ANY(assignedto) WHERE privacy != 1 
 
-// vv here is the psql to get private tasks
+// to get private tasks
 SELECT  title, empid, fname, lname FROM employees INNER JOIN tasks ON empid=ANY(assignedto) WHERE privacy != 0 AND title IN ('$1');
 
-// vv here is how to change a task in the db (this will update to elastic automatically through the application)
+// to change a task in the db (this will update to elastic on db trigger through the application listener)
 UPDATE public.tasks
 	SET title=('not so secret scrum meeting'), privacy=0
 	WHERE taskid=<TASKID>;
-
-//Elastic Mappings (if you need them) us Kibana to get the es cluster index to recast the UUID data type as 'Keyword'
-
-    PUT /test_index
-{
-  "mappings": {
-    "properties": {
-        "unitid":{"type":"keyword"},
-        "taskid":{"type":"integer"},
-        "assignedto":{"type":"integer"},
-                "title":{"type":"text"},
-                        "privacy":{"type":"integer"},   
-    }
-  }
-}
-// this is the schema if you need it.
-[
-    {
-        "database": "workers",
-        "index": "newindex",
-        "nodes": {
-            "table": "employees",
-            "columns": [
-                "uniqid",
-                "empid",
-                "integer",
-                "title",
-                "fname",
-                "lname"
-                ],
-            "table": "tasks",
-            "columns": [
-                "unitid",
-                "taskid",
-                "assignedto",
-                "title",
-                "privacy"
-                ],
-        }
-    }
-]
-

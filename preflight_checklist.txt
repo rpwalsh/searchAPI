@@ -10,16 +10,16 @@
                CREATE DATABASE IF NOT EXISTS workers WITH ENCODING 'UTF8';
 
 // ✔ //  2. The database should have at least two tables called Employees & Tasks
-
 // ✔ //  3. Employees should have a unique identifier that is not their ID: 
                CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-      //            ^^^ This lets us properly assign the uuid column types.
+               This lets us properly assign the uuid column types.
 
 // ✔ //  4. Employees can work on multiple tasks & 
 // ✔ //  5. Tasks can be worked on by multiple employees:
-//             The tasks.assignedto[] field below is cast as an array
-//             there's some regex magic happening in the function   -->>>  returnEmployeesByTask_esapi
-//
+                The tasks.assignedto[] field below is cast as an array
+                there's some regex magic happening in the function   -->>>  returnEmployeesByTask_esapi
+
+*** SEE NOTES IN SQL_SETUP.txt
 
                CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
                CREATE TABLE IF NOT EXISTS employees
@@ -43,8 +43,6 @@
 
 // ✔ // 6. Some tasks are considered private tasks, these should be omitted from all search results:
                tasks.privacy key: 0 = (Public) or 1 = (Private)
-//       a bool would be appropriate for true/false cases, but int allows for
-//          more definable geometry for future assignment of security controls
 
 // ✔ // 7. Create a method in which to seed the database with tasks and employees
      //  I did this in sql on the console, but it's simple enough to add it in the program as a query:
@@ -68,9 +66,9 @@
                                 ('{4, 6}','secret scrum meeting','1'),
                                 ('{}','vacation','0');
                         ");
-      //
+
 // ✔ // 8. Results returned over the API be returned from elasticsearch , not postgres.
-      //		apiListener.HandleFunc("/search/tasks/name/{title}", returnSingleTask_esapi)
+      		apiListener.HandleFunc("/search/tasks/name/{title}", returnSingleTask_esapi)
                 https:'//'localhost:8080/search/tasks/name/scrum
                   
      //------------------------------------------------------------------------------------------------
@@ -79,7 +77,7 @@
      //------------------------------------------------------------------------------------------------
      //
 // ✔ //  1. provide a method in which to authenticate with your API endpoints.
-                https://testuser:testpass@localhost:8080/search/tasks/name/scrum
+           Method SetBasicAuth & TLS --> https://testuser:testpass@localhost:8080/search/tasks/name/scrum
 
 // ✔ // 2. provide an Elasticsearch API endpoint to search for employees by their unique identifier
                 apiListener.HandleFunc("/employees/uuid/{uniqid}", returnSingleByUUID) ✔
@@ -110,9 +108,10 @@
      //-------------------------------------------------------------------------------//
      uuid endpoint test: http://localhost:8080/search/employees/uuid/bcef62b3-3f83-4c4d-8c47-2ee4bc3a5987
      task endpoint test: http://localhost:8080/search/tasks/name/scrum
+     join endpoint test: http://localhost:8080/search/whois/assigned/1
 
+     see included screenshots & inline documentation in main.go
 
-                                see file main_test.go
      //-------------------------------------------------------------------------------//
      //                                 --rpw                                         //
      //-------------------------------------------------------------------------------//

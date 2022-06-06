@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -58,6 +60,13 @@ type Message struct {
 	Data   *json.RawMessage `json:"data"`
 }
 
+type application struct {
+	auth struct {
+		username string
+		password string
+	}
+}
+
 const (
 	host     = "localhost" // This should be on heroku or something,
 	port     = 5432        // but localhost will do for this demo...
@@ -67,12 +76,11 @@ const (
 )
 
 var (
-	//	res2     esapi.Response
 	psqlInfo = fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%s dbname=%s sslmode=disable",
 		host, port, psqluser, password, dbname)
 
-	elasticIndex = "https://test:ryantest@<<redacted>>.es.us-central1.gcp.cloud.es.io:9243/newindex/_doc"
+	elasticIndex = "https://user:pass@<redacted>.es.us-central1.gcp.cloud.es.io:9243/newindex/_doc"
 	//              http://localhost:9200/{index_name}/_doc"   <!-- NO TRAILING SLASHES!!! -->
 
 	esURLasArray = []string{elasticIndex} // for cfg below
@@ -82,8 +90,8 @@ var (
 
 		//Username:  "<your Elastic Cluster user>",
 		//Password:  "<your Elastic Cluster pass>",
-		CloudID: "<<redacted>>",
-		APIKey:  "<<redacted>>",
+		CloudID: "<redacted>",
+		APIKey:  "<redacted>",
 		//Addresses: esURLasArray,
 	}
 
@@ -95,6 +103,72 @@ var (
 	verbose = true // not well implemented, is here for expansion
 )
 
+func main() {
+	es, _ := elasticsearch.NewClient(cfg)
+	//check that esapi works
+	log.Println("Elastic Connected! -----  ES Cluster Version:" + elasticsearch.Version)
+
+	res, err := es.Info() // error here? check your elastic login strings in the var declaration above!
+	if err != nil {
+		log.Print("Error opening Elastic Index: %s", err)
+	}
+	log.Print("Cluster returns es.Info: \n")
+	log.Print(res)
+	//print the elastic cluster info to the console to prove it connected.
+
+	go psqlEventListener() // fires the psql event listener in a new thread
+	handleRequests()       // handles the http api endpoints in this thread
+}
+
+// // // // // //
+//
+//   Everything below this line should be re-modularized
+//
+// // // // // //
+//
+//  Module 1:   infrastructure.go
+func basicAuth(next http.HandlerFunc) http.HandlerFunc {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Extract the username and password from the request
+		// Authorization header. If no Authentication header is present
+		// or the header value is invalid, then the 'ok' return value
+		// will be false.
+		username, password, ok := r.BasicAuth()
+		if ok {
+			// Calculate SHA-256 hashes for the provided and expected
+			// usernames and passwords.
+			usernameHash := sha256.Sum256([]byte(username))
+			passwordHash := sha256.Sum256([]byte(password))
+			expectedUsernameHash := sha256.Sum256([]byte("testuser"))
+			expectedPasswordHash := sha256.Sum256([]byte("testpass"))
+
+			// Use the subtle.ConstantTimeCompare() function to check if
+			// the provided username and password hashes equal the
+			// expected username and password hashes. ConstantTimeCompare
+			// will return 1 if the values are equal, or 0 otherwise.
+			// Importantly, we should to do the work to evaluate both the
+			// username and password before checking the return values to
+			// avoid leaking information.
+			usernameMatch := (subtle.ConstantTimeCompare(usernameHash[:], expectedUsernameHash[:]) == 1)
+			passwordMatch := (subtle.ConstantTimeCompare(passwordHash[:], expectedPasswordHash[:]) == 1)
+
+			// If the username and password are correct, then call
+			// the next handler in the chain. Make sure to return
+			// afterwards, so that none of the code below is run.
+			if usernameMatch && passwordMatch {
+				next.ServeHTTP(w, r)
+				return
+			}
+		}
+
+		// If the Authentication header is not present, is invalid, or the
+		// username or password is wrong, then set a WWW-Authenticate
+		// header to inform the client that we expect them to use basic
+		// authentication and send a 401 Unauthorized response.
+		w.Header().Set("WWW-Authenticate", `Basic realm="restricted", charset="UTF-8"`)
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+	})
+}
 func OpenConnection() *sql.DB {
 
 	db, err := sql.Open("postgres", psqlInfo)
@@ -109,24 +183,6 @@ func OpenConnection() *sql.DB {
 
 	return db // !TODO!! Needs Error Handler for Missing DB
 }
-
-func main() {
-	es, _ := elasticsearch.NewClient(cfg)
-	//check that esapi works
-	log.Println("Elastic Connected! -----  ES Cluster Version:" + elasticsearch.Version)
-
-	res, err := es.Info()
-	if err != nil {
-		log.Print("Error opening Elastic Index: %s", err)
-	}
-	log.Print("Cluster returns es.Info: \n")
-	log.Print(res)
-	//print the elastic cluster info to the console to prove it connected.
-
-	go psqlEventListener() // fires the psql event listener in a new thread
-	handleRequests()       // handles the http api endpoints in this thread
-}
-
 func handleRequests() {
 	// Cross Origin Handler
 	corsWrapper := cors.New(cors.Options{ // again, added for security & future expansion
@@ -153,8 +209,8 @@ func handleRequests() {
 	apiListener.HandleFunc("/other", othervars)
 
 	//-------->>>>>  		other routes go here!			<<<<<<-------//
-
 	log.Fatal(http.ListenAndServe(":8080", corsWrapper.Handler(apiListener)))
+	//log.Fatal(http.ListenAndServeTLS(":8080", "localhost.crt", "localhost.key", corsWrapper.Handler(apiListener)))
 	return
 	//-----------------------------------------------------------//
 	//-----------------------------------------------------------//
@@ -302,12 +358,126 @@ func httpReq(method, url string, reader io.Reader) *http.Response {
 func isErrorHTTPCode(resp *http.Response) bool {
 	return resp.StatusCode < 200 || resp.StatusCode >= 300
 }
-
+func othervars(w http.ResponseWriter, r *http.Request) {
+	employeeData := []byte(`
+		[
+{
+employees
+		  {
+			"uniqid": "b98291a1-69e9-4030-9afd-fd23a4d93f0f",
+			"empid": 1,
+			"fname": "jane",
+			"lname": "smith"
+		  },
+		  {
+			"uniqid": "22f2ece1-bccc-47eb-b28c-9bc767f3dc89",
+			"empid": 2,
+			"fname": "billy",
+			"lname": "jones"
+		  },
+		  {
+			"uniqid": "87fab4fb-441f-4cff-9121-2e3222ea7d18",
+			"empid": 3,
+			"fname": "lee",
+			"lname": "irving"
+		  },
+		  {
+			"uniqid": "f056f333-7836-471f-8578-47b24fd8b911",
+			"empid": 4,
+			"fname": "sarah",
+			"lname": "pilsner"
+		  },
+		  {
+			"uniqid": "72064bd1-b5b5-4911-b177-42609de697f9",
+			"empid": 5,
+			"fname": "guy",
+			"lname": "young"
+		  },
+		  {
+			"uniqid": "2abe1d24-72ca-4f03-9f7b-7478d025f716",
+			"empid": 6,
+			"fname": "lady",
+			"lname": "oldman"
+		  }
+}
+		]`)
+	tasksData := []byte(`
+		[{tasks
+		  {
+			"unitid": "18f16020-0e13-4f16-b4a4-e8dd52237d51",
+			"taskid": 1,
+			"assignedto": [1, 2, 3, 4, 5, 6],
+			"title": "scrum meeting",
+			"privacy": 0
+		  },
+		  {
+			"unitid": "ca8af363-cbd5-4416-87f1-d65da242f69d",
+			"taskid": 2,
+			"assignedto": [4, 5, 6],
+			"title": "interview",
+			"privacy": 0
+		  },
+		  {
+			"unitid": "2e819dbc-c15d-4e4f-896f-c0a95bd19b42",
+			"taskid": 3,
+			"assignedto": [1, 2, 6],
+			"title": "documentation",
+			"privacy": 0
+		  },
+		  {
+			"unitid": "a9b89431-d8d6-41d2-be87-76c00ffe8484",
+			"taskid": 4,
+			"assignedto": [1, 3],
+			"title": "secret docker file generation",
+			"privacy": 1
+		  },
+		  {
+			"unitid": "0a284be9-4033-4c53-8d6f-2b50e2ee5342",
+			"taskid": 5,
+			"assignedto": [2],
+			"title": "a/b testing",
+			"privacy": 0
+		  },
+		  {
+			"unitid": "082b65f8-336a-4aa8-9869-6b1885441e4f",
+			"taskid": 6,
+			"assignedto": [1, 2],
+			"title": "secret scrum meeting",
+			"privacy": 1
+		  },
+		  {
+			"unitid": "e5c2b757-f4c3-435a-b387-a231b158466a",
+			"taskid": 7,
+			"assignedto": [6],
+			"title": "push dev to prod",
+			"privacy": 0
+		  },
+		  {
+			"unitid": "551fac4c-088e-402e-b597-4c1ce7f67cfe",
+			"taskid": 8,
+			"assignedto": [4, 6],
+			"title": "secret scrum meeting",
+			"privacy": 1
+		  },
+		  {
+			"unitid": "82ded647-75bf-4a39-b071-fd80c4c95fd8",
+			"taskid": 9,
+			"assignedto": [],
+			"title": "vacation",
+			"privacy": 0
+		  }
+		}]
+		`)
+	w.Write(employeeData)
+	w.Write(tasksData)
+}
 func homePage(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Please specify an api endpoint")
 	log.Println("Homepage requested! ")
 }
 
+//
+//	Module 2:	searchEsapi.go
 func returnSingleTask_esapi(w http.ResponseWriter, hr *http.Request) {
 	log.SetFlags(0)
 
@@ -774,7 +944,8 @@ func returnEmployeesByTask_esapi(w http.ResponseWriter, hr *http.Request) {
 		}
 	}
 } // ✔ //
-
+//
+//	Module 3:	searchPsql.go
 func returnAllEmployees_psql(w http.ResponseWriter, r *http.Request) {
 	log.Println("/employees was called! apiServer.go:19 returnAllEmployees")
 
@@ -967,118 +1138,4 @@ func returnPairedTask_byID_psql(w http.ResponseWriter, r *http.Request) {
 	//defer rows.Close()
 	defer db.Close()
 
-}
-
-func othervars(w http.ResponseWriter, r *http.Request) {
-	employeeData := []byte(`
-		[
-{
-employees
-		  {
-			"uniqid": "b98291a1-69e9-4030-9afd-fd23a4d93f0f",
-			"empid": 1,
-			"fname": "jane",
-			"lname": "smith"
-		  },
-		  {
-			"uniqid": "22f2ece1-bccc-47eb-b28c-9bc767f3dc89",
-			"empid": 2,
-			"fname": "billy",
-			"lname": "jones"
-		  },
-		  {
-			"uniqid": "87fab4fb-441f-4cff-9121-2e3222ea7d18",
-			"empid": 3,
-			"fname": "lee",
-			"lname": "irving"
-		  },
-		  {
-			"uniqid": "f056f333-7836-471f-8578-47b24fd8b911",
-			"empid": 4,
-			"fname": "sarah",
-			"lname": "pilsner"
-		  },
-		  {
-			"uniqid": "72064bd1-b5b5-4911-b177-42609de697f9",
-			"empid": 5,
-			"fname": "guy",
-			"lname": "young"
-		  },
-		  {
-			"uniqid": "2abe1d24-72ca-4f03-9f7b-7478d025f716",
-			"empid": 6,
-			"fname": "lady",
-			"lname": "oldman"
-		  }
-}
-		]`)
-	tasksData := []byte(`
-		[{tasks
-		  {
-			"unitid": "18f16020-0e13-4f16-b4a4-e8dd52237d51",
-			"taskid": 1,
-			"assignedto": [1, 2, 3, 4, 5, 6],
-			"title": "scrum meeting",
-			"privacy": 0
-		  },
-		  {
-			"unitid": "ca8af363-cbd5-4416-87f1-d65da242f69d",
-			"taskid": 2,
-			"assignedto": [4, 5, 6],
-			"title": "interview",
-			"privacy": 0
-		  },
-		  {
-			"unitid": "2e819dbc-c15d-4e4f-896f-c0a95bd19b42",
-			"taskid": 3,
-			"assignedto": [1, 2, 6],
-			"title": "documentation",
-			"privacy": 0
-		  },
-		  {
-			"unitid": "a9b89431-d8d6-41d2-be87-76c00ffe8484",
-			"taskid": 4,
-			"assignedto": [1, 3],
-			"title": "secret docker file generation",
-			"privacy": 1
-		  },
-		  {
-			"unitid": "0a284be9-4033-4c53-8d6f-2b50e2ee5342",
-			"taskid": 5,
-			"assignedto": [2],
-			"title": "a/b testing",
-			"privacy": 0
-		  },
-		  {
-			"unitid": "082b65f8-336a-4aa8-9869-6b1885441e4f",
-			"taskid": 6,
-			"assignedto": [1, 2],
-			"title": "secret scrum meeting",
-			"privacy": 1
-		  },
-		  {
-			"unitid": "e5c2b757-f4c3-435a-b387-a231b158466a",
-			"taskid": 7,
-			"assignedto": [6],
-			"title": "push dev to prod",
-			"privacy": 0
-		  },
-		  {
-			"unitid": "551fac4c-088e-402e-b597-4c1ce7f67cfe",
-			"taskid": 8,
-			"assignedto": [4, 6],
-			"title": "secret scrum meeting",
-			"privacy": 1
-		  },
-		  {
-			"unitid": "82ded647-75bf-4a39-b071-fd80c4c95fd8",
-			"taskid": 9,
-			"assignedto": [],
-			"title": "vacation",
-			"privacy": 0
-		  }
-		}]
-		`)
-	w.Write(employeeData)
-	w.Write(tasksData)
 }
