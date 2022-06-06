@@ -6,48 +6,49 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/elastic/go-elasticsearch/v8/esapi"
 	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/elastic/go-elasticsearch/v8"
 	"github.com/gorilla/mux"
 	"github.com/lib/pq"
 	"github.com/rs/cors"
 )
 
 type Employee struct {
-	Uniqid string //`json:"UUID"`
-	Empid  string //`json:"Employee ID"`
-	Fname  string //`json:"First Name"`
-	Lname  string //`json:"Last Name"`
+	Uniqid string `json:"UUID"`
+	Empid  string `json:"Employee ID"`
+	Fname  string `json:"First Name"`
+	Lname  string `json:"Last Name"`
 }
 
 type Task struct {
-	Unitid     string //`json:"GUID"`
-	Taskid     string //`json:"Task ID"`
-	Assignedto string //`json:"Assigned To"`
-	Title      string //`json:"Title"`
-	Privacy    string //`json:"Privacy"`
+	Unitid     string `json:"GUID"`
+	Taskid     string `json:"Task ID"`
+	Assignedto string `json:"Assigned To"`
+	Title      string `json:"Title"`
+	Privacy    string `json:"Privacy"`
 }
 
 type Whois struct {
-	Uniqid     string //`json:"Task UUID"`
-	Empid      string //`json:"Employee UUID"`
-	Fname      string //`json:"Task ID"`
-	Lname      string //`json:"Assigned To"`
-	Unitid     string //`json:"Title"`
-	Taskid     string //`json:"Privacy"`
-	Assignedto string //`json:"Employee ID"`
-	Title      string //`json:"First Name"`
-	Privacy    string //`json:"Last Name"`
+	Uniqid     string `json:"Task UUID"`
+	Empid      string `json:"Employee UUID"`
+	Fname      string `json:"Task ID"`
+	Lname      string `json:"Assigned To"`
+	Unitid     string `json:"Title"`
+	Taskid     string `json:"Privacy"`
+	Assignedto string `json:"Employee ID"`
+	Title      string `json:"First Name"`
+	Privacy    string `json:"Last Name"`
 }
 
 type Message struct {
@@ -60,28 +61,29 @@ type Message struct {
 const (
 	host     = "localhost"
 	port     = 5432
-	psqluser = "postgres" // change to your db user
-	password = "postgres" // change to your db pass
+	psqluser = "postgres"
+	password = "postgres"
 	dbname   = "workers"
 )
 
 var (
+	res2     esapi.Response
 	psqlInfo = fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%s dbname=%s sslmode=disable",
 		host, port, psqluser, password, dbname)
 
-	elasticIndex = "https://test:ryantest@cointest.es.us-central1.gcp.cloud.es.io:9243/newindex/_doc"
-	//              http://localhost:9200/{index_name}/_doc" /// NO TRAILING SLASHES!!!
+	elasticIndex = "https://test:ryantest@<redacted>.es.us-central1.gcp.cloud.es.io:9243/newindex/_doc"
+	//              https://localhost:9200/{index_name}/_doc"   <!-- NO TRAILING SLASHES!!! -->
 
 	esURLasArray = []string{elasticIndex}
 	myIndex      = "newindex"
 	ctx          = context.Background()
 	cfg          = elasticsearch.Config{
 
-		//Username:  "<your Elastic Cluster user>>",
-		//Password:  "<your Elastic Cluster pass>>",
-		CloudID: "<your elastic.io cloud id>",
-		APIKey:  "<your elastic.io cloud api key>",
+		//Username:  "<your Elastic Cluster user>",
+		//Password:  "<your Elastic Cluster pass>",
+		CloudID: "<redacted>",
+		APIKey:  "<redacted>",
 		//Addresses: esURLasArray,
 	}
 
@@ -109,19 +111,19 @@ func OpenConnection() *sql.DB {
 
 func main() {
 	es, _ := elasticsearch.NewClient(cfg)
-	//check that it works
-	log.Println(elasticsearch.Version)
+	//check that esapi works
+	log.Println("Elastic Connected! -----  ES Cluster Version:" + elasticsearch.Version)
 
 	res, err := es.Info()
 	if err != nil {
 		log.Fatalf("Error opening Elastic Index: %s", err)
 	}
+	log.Println("Cluster returns es.Info: \n")
 	log.Println(res)
-	//it prints the elastic cluster info to the console to prove it works.
+	//print the elastic cluster info to the console to prove it connected.
 
 	go psqlEventListener()
 	handleRequests()
-
 }
 
 func handleRequests() {
@@ -563,7 +565,8 @@ func returnSingleEmpUUID_esapi(w http.ResponseWriter, hr *http.Request) {
 func returnEmployeesByTask_esapi(w http.ResponseWriter, hr *http.Request) {
 	log.SetFlags(0)
 	var (
-		r  map[string]interface{}
+		r map[string]interface{}
+		//	r2 map[string]interface{}
 		wg sync.WaitGroup
 	)
 
@@ -574,7 +577,7 @@ func returnEmployeesByTask_esapi(w http.ResponseWriter, hr *http.Request) {
 
 	vars := mux.Vars(hr)
 	key := string(vars["taskid"])
-	fmt.Println("/employees was called! esAPI results incoming     returnSingleTask_esapi     key=: " + key)
+	fmt.Println("/employees was called! esAPI results incoming     returnEmployeesByTask_esapi     key=: " + key)
 
 	//rows, err := db.Query("SELECT * FROM tasks WHERE title like $1 and privacy = 0", key)
 	for i, taskid := range []string{key} {
@@ -667,6 +670,7 @@ func returnEmployeesByTask_esapi(w http.ResponseWriter, hr *http.Request) {
 	if err4 := json.NewDecoder(res.Body).Decode(&r); err4 != nil {
 		log.Fatalf("Error parsing the response body: %s", err4)
 	}
+
 	// Print the response status, number of results, and request duration.
 	log.Printf(
 		"[%s] %d hits; took: %dms",
@@ -674,18 +678,119 @@ func returnEmployeesByTask_esapi(w http.ResponseWriter, hr *http.Request) {
 		int(r["hits"].(map[string]interface{})["total"].(map[string]interface{})["value"].(float64)),
 		int(r["took"].(float64)),
 	)
+	var byteToempid []byte
 	// Print the ID and document source for each hit.
 	for _, hit := range r["hits"].(map[string]interface{})["hits"].([]interface{}) {
-		empBytes, _ := json.MarshalIndent(hit, "", "\t")
 
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(empBytes)
+		hitSource := hit.(map[string]interface{})["_source"]
+		hitEmployees := hitSource.(map[string]interface{})["assignedto"] //_source
 
-		log.Printf(" * ID=%s, %s", hit.(map[string]interface{})["_id"], hit.(map[string]interface{})["_source"])
+		//	empBytes, _ := json.MarshalIndent(hitEmployees, "", "\t")
+		byteToempid, _ = json.Marshal(hitEmployees)
+
+		log.Println(strings.Repeat("=", 37))
+
+		log.Printf(" * ID=%s, %s", hit.(map[string]interface{})["_id"], hitEmployees)
 	}
 
-	log.Println(strings.Repeat("=", 37))
-} // ✔ //
+	data := byteToempid
+	var reddd = ""
+	//var borealis = ""
+	log.Printf(" *********** ID=%s,", data)
+	fmt.Println("/employees was called! esAPI results incoming     returnEmployeesByTask_esapi     key=: ")
+	//var r map[string]interface{}
+
+	arr := data
+	fmt.Println("The elements of the array are:")
+
+	// using for loop
+	for index, element := range arr {
+		reddd += string(element)
+		fmt.Println("At loop", index, " string value is", reddd)
+	}
+
+	//using regex
+	str1 := reddd
+
+	re := regexp.MustCompile(`[-]?\d[\d,]*[\.]?[\d{2}]*`)
+	fmt.Printf("Pattern: %v\n", re.String())                            // Print Pattern
+	fmt.Printf("String contains any match: %v\n", re.MatchString(str1)) // True
+
+	submatchall := re.FindAllString(str1, -1)
+	var submatchstring string
+	for _, element := range submatchall {
+		fmt.Println(element)
+		submatchstring += element
+	}
+	var qwewq string = "["
+	gfdfg := string(submatchstring)
+	var asdfd []string = strings.Split(gfdfg, ",")
+	for i, p := range asdfd {
+		fmt.Println(p)
+		qwewq += "\"" + string(asdfd[i]) + "\"" + ","
+
+	}
+	qwewq2 := strings.TrimRight(qwewq, ",")
+	qwewq2 += "]"
+
+	//log.Println(qwewq)
+	log.Println(qwewq2)
+
+	////////////////////////////////////////////////////////////////////////
+	//	yr := strings.NewReader(qwewq2)
+
+	var buf2 bytes.Buffer
+	query2 := `{"query":{"terms":{"empid":` + qwewq2 + `}}}`
+	//yr.Read(&buf)
+
+	if _, err := buf2.WriteString(query2); err != nil {
+		log.Print("Error encoding query: %s", err)
+
+	}
+	log.Print(query2)
+	log.Print(&buf2)
+	//strings.Replace(buf, "\\", "", -1)
+
+	// Perform the search request.
+	res2, err := es.Search(
+		es.Search.WithContext(context.Background()),
+		es.Search.WithIndex(myIndex),
+		es.Search.WithBody(&buf2),
+		es.Search.WithTrackTotalHits(true),
+		es.Search.WithPretty(),
+	)
+
+	defer res2.Body.Close()
+	if res2.IsError() {
+		log.Printf("Error indexing document")
+	} else {
+		// Deserialize the response into a map.
+		var tr map[string]interface{}
+		if err := json.NewDecoder(res2.Body).Decode(&tr); err != nil {
+			log.Printf("Error parsing the response body: %s", err)
+		} else {
+			// Print the response status and indexed document version.
+			for _, hit2 := range tr["hits"].(map[string]interface{})["hits"].([]interface{}) {
+
+				hitSource2 := hit2.(map[string]interface{})["_source"]
+				hitEmployees2 := hitSource2.(map[string]interface{})["empid"] //_source
+
+				empBytes2, _ := json.MarshalIndent(hitSource2, "", "\t")
+				//byteToempid2, _ := json.Marshal(hitEmployees2)
+
+				log.Println(strings.Repeat("=", 37))
+
+				log.Printf(" * ID=%s, %s", hit2.(map[string]interface{})["_id"], hitEmployees2)
+				w.Header().Set("Content-Type", "application/json")
+				w.Write(empBytes2)
+				log.Printf(" * ID=%s, %s", hit2.(map[string]interface{})["_id"], hitEmployees2)
+			}
+		}
+
+		// Print the response status and error information.
+
+	}
+}
 
 func nope_returnEmployeesByTask_esapi(w http.ResponseWriter, hr *http.Request) {
 	// /search/whois/assigned/{taskid}"

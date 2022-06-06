@@ -31,7 +31,7 @@
         docker exec -it psql psql -U [postgres_user]
 
 // I did not use docker, i used a local install on windows to do this, so ymmv. 
-// the assumption is that you already have the servers already set up somewhere
+// the assumption is that you already have the servers set up somewhere
 
 // create the the main database.
 CREATE DATABASE workers WITH ENCODING 'UTF8' LC_COLLATE='POSIX' LC_CTYPE='POSIX';
@@ -49,7 +49,7 @@ CREATE TABLE tasks (unitid UUID, taskid INT,  employees INT[],  title VARCHAR(25
 CREATE TABLE IF NOT EXISTS employees
 (
     uniqid uuid DEFAULT uuid_generate_v4 () NOT NULL,                # <-- this may error, see below
-    empid integer NOT NULL,                                          
+    empid serial NOT NULL default 0,
     fname varchar(255) NOT NULL,                                     
     lname varchar(255) NOT NULL,
     PRIMARY KEY ("uniqid")
@@ -58,7 +58,7 @@ CREATE TABLE IF NOT EXISTS employees
 CREATE TABLE IF NOT EXISTS tasks
 (
     unitid uuid DEFAULT uuid_generate_v4 (),
-    taskid serial NOT NULL,
+    taskid serial NOT NULL default 0,
     assignedto integer[],
     title varchar(255) NOT NULL,
     privacy integer,
@@ -97,6 +97,7 @@ INSERT INTO tasks (assignedto, title, privacy)
 	('{6}','push dev to prod','0'),
 	('{4, 6}','secret scrum meeting','1'),
 	('{}','vacation','0');
+
 //  we need to update elastic as an index, every time something changes in the PGSQL DB
 //  So: lets make an event trigger that we can call from the listener thread:
 
@@ -272,3 +273,36 @@ SELECT  title, empid, fname, lname FROM employees INNER JOIN tasks ON empid=ANY(
         }
     }
 ]
+
+
+-- Table: public.joined_table
+
+-- DROP TABLE IF EXISTS public.joined_table;
+
+CREATE TABLE IF NOT EXISTS public.joined_table
+(
+    unitid uuid,
+    taskid integer,
+    assignedto integer[],
+    title character varying(255) COLLATE pg_catalog."default",
+    privacy integer,
+    uniqid uuid,
+    empid integer,
+    fname character varying(255) COLLATE pg_catalog."default",
+    lname character varying(255) COLLATE pg_catalog."default"
+)
+
+TABLESPACE pg_default;
+
+ALTER TABLE IF EXISTS public.joined_table
+    OWNER to postgres;
+
+-- Trigger: tasks_notify_event_99
+
+-- DROP TRIGGER IF EXISTS tasks_notify_event_99 ON public.joined_table;
+
+CREATE TRIGGER tasks_notify_event_99
+    AFTER INSERT OR DELETE OR UPDATE
+    ON public.joined_table
+    FOR EACH ROW
+    EXECUTE FUNCTION public.notify_event_99();

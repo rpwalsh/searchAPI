@@ -8,13 +8,29 @@
 ////////////////////////
 // ✔ //  1. You should write the SQL to create a database called workers .
                CREATE DATABASE IF NOT EXISTS workers WITH ENCODING 'UTF8';
+
 // ✔ //  2. The database should have at least two tables called Employees & Tasks
+
 // ✔ //  3. Employees should have a unique identifier that is not their ID: 
                CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
       //            ^^^ This lets us properly assign the uuid column types.
+
 // ✔ //  4. Employees can work on multiple tasks & 
 // ✔ //  5. Tasks can be worked on by multiple employees:
-      //    The tasks.assignedto[] field below is cast as an array so we can use a join on tasks where empid=any(assignedto[])
+//             The tasks.assignedto[] field below is cast as an array
+//             so we can use a join on tasks where empid=any(assignedto[])
+//
+//             ^^ this is clunky and requires an extra table & trigger on the db to get it done
+//                the whole point of elastic is to avoid this, but the json to get the tables nested is
+//             vv complex due to the initial assumption of being able to do it in a single array
+//
+//              in addition to the sql below, the trigger is going to look something like this:
+                    IF NOT EXISTS CREATE TABLE joined_table
+                        AS (SELECT * FROM tasks INNER JOIN employees WHERE empid=any(assignedto));
+
+//     For example: CREATE TABLE suppliers AS (SELECT * FROM companies WHERE 1=2);
+//
+
                CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
                CREATE TABLE IF NOT EXISTS employees
                     (
@@ -37,8 +53,9 @@
 
 // ✔ // 6. Some tasks are considered private tasks, these should be omitted from all search results:
                tasks.privacy key: 0 = (Public) or 1 = (Private)
-// ✔ //    a bool would be appropriate for true/false cases, but int allows for 
-     //     more definable geometry for future assignment of security controls
+//       a bool would be appropriate for true/false cases, but int allows for
+//          more definable geometry for future assignment of security controls
+
 // ✔ // 7. Create a method in which to seed the database with tasks and employees
      //  I did this in sql on the console, but it's simple enough to add it in the program as a query:
 
@@ -72,7 +89,7 @@
      //------------------------------------------------------------------------------------------------
      //
 // ✔ //  1. provide a method in which to authenticate with your API endpoints.
-                https:'//'testuser:testpass@localhost:8080/search/tasks/name/scrum
+                https://testuser:testpass@localhost:8080/search/tasks/name/scrum
 
 // ✔ // 2. provide an Elasticsearch API endpoint to search for employees by their unique identifier
                 apiListener.HandleFunc("/employees/uuid/{uniqid}", returnSingleByUUID) ✔
