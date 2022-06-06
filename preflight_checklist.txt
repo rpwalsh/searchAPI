@@ -18,17 +18,7 @@
 // ✔ //  4. Employees can work on multiple tasks & 
 // ✔ //  5. Tasks can be worked on by multiple employees:
 //             The tasks.assignedto[] field below is cast as an array
-//             so we can use a join on tasks where empid=any(assignedto[])
-//
-//             ^^ this is clunky and requires an extra table & trigger on the db to get it done
-//                the whole point of elastic is to avoid this, but the json to get the tables nested is
-//             vv complex due to the initial assumption of being able to do it in a single array
-//
-//              in addition to the sql below, the trigger is going to look something like this:
-                    IF NOT EXISTS CREATE TABLE joined_table
-                        AS (SELECT * FROM tasks INNER JOIN employees WHERE empid=any(assignedto));
-
-//     For example: CREATE TABLE suppliers AS (SELECT * FROM companies WHERE 1=2);
+//             there's some regex magic happening in the function   -->>>  returnEmployeesByTask_esapi
 //
 
                CREATE EXTENSION IF NOT EXISTS "uuid-ossp";

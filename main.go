@@ -59,54 +59,55 @@ type Message struct {
 }
 
 const (
-	host     = "localhost"
-	port     = 5432
+	host     = "localhost" // This should be on heroku or something,
+	port     = 5432        // but localhost will do for this demo...
 	psqluser = "postgres"
 	password = "postgres"
 	dbname   = "workers"
 )
 
 var (
-	res2     esapi.Response
+	//	res2     esapi.Response
 	psqlInfo = fmt.Sprintf("host=%s port=%d user=%s "+
 		"password=%s dbname=%s sslmode=disable",
 		host, port, psqluser, password, dbname)
 
-	elasticIndex = "https://test:ryantest@<redacted>.es.us-central1.gcp.cloud.es.io:9243/newindex/_doc"
-	//              https://localhost:9200/{index_name}/_doc"   <!-- NO TRAILING SLASHES!!! -->
+	elasticIndex = "https://test:ryantest@<<redacted>>.es.us-central1.gcp.cloud.es.io:9243/newindex/_doc"
+	//              http://localhost:9200/{index_name}/_doc"   <!-- NO TRAILING SLASHES!!! -->
 
-	esURLasArray = []string{elasticIndex}
+	esURLasArray = []string{elasticIndex} // for cfg below
 	myIndex      = "newindex"
 	ctx          = context.Background()
 	cfg          = elasticsearch.Config{
 
 		//Username:  "<your Elastic Cluster user>",
 		//Password:  "<your Elastic Cluster pass>",
-		CloudID: "<redacted>",
-		APIKey:  "<redacted>",
+		CloudID: "<<redacted>>",
+		APIKey:  "<<redacted>>",
 		//Addresses: esURLasArray,
 	}
 
 	fieldName  = "title" // static test input for searchESAPI.go
 	searchTerm = "scrum" // static test input
 	query      = `{"query": {"term": {"` + fieldName + `" : "` + searchTerm + `"}}, "size": 10}`
+	// ^^ the final elastic query strings should look like this ^^
 
-	verbose = true
+	verbose = true // not well implemented, is here for expansion
 )
 
 func OpenConnection() *sql.DB {
 
 	db, err := sql.Open("postgres", psqlInfo)
 	if err != nil {
-		panic(err)
+		log.Print(err)
 	}
 
 	err = db.Ping()
 	if err != nil {
-		panic(err)
+		log.Print(err)
 	}
 
-	return db
+	return db // !TODO!! Needs Error Handler for Missing DB
 }
 
 func main() {
@@ -116,19 +117,19 @@ func main() {
 
 	res, err := es.Info()
 	if err != nil {
-		log.Fatalf("Error opening Elastic Index: %s", err)
+		log.Print("Error opening Elastic Index: %s", err)
 	}
-	log.Println("Cluster returns es.Info: \n")
-	log.Println(res)
+	log.Print("Cluster returns es.Info: \n")
+	log.Print(res)
 	//print the elastic cluster info to the console to prove it connected.
 
-	go psqlEventListener()
-	handleRequests()
+	go psqlEventListener() // fires the psql event listener in a new thread
+	handleRequests()       // handles the http api endpoints in this thread
 }
 
 func handleRequests() {
 	// Cross Origin Handler
-	corsWrapper := cors.New(cors.Options{
+	corsWrapper := cors.New(cors.Options{ // again, added for security & future expansion
 		AllowedMethods: []string{"GET", "POST", "PUT"},
 		AllowedHeaders: []string{"Content-Type", "Origin", "Accept", "*"},
 	})
@@ -139,7 +140,7 @@ func handleRequests() {
 	// Elasticsearch return api endpoints
 	apiListener.HandleFunc("/search/tasks/name/{title}", returnSingleTask_esapi)
 	apiListener.HandleFunc("/search/employees/uuid/{uniqid}", returnSingleEmpUUID_esapi)
-	apiListener.HandleFunc("/search/whois/assigned/{taskid}", returnEmployeesByTask_esapi) // !!TODO!!  mux & display
+	apiListener.HandleFunc("/search/whois/assigned/{taskid}", returnEmployeesByTask_esapi) //
 
 	// Postgres return api endpoints
 	apiListener.HandleFunc("/employees", returnAllEmployees_psql)
@@ -168,19 +169,19 @@ func handleRequests() {
 func psqlEventListener() {
 	_, err := sql.Open("postgres", psqlInfo)
 	if err != nil {
-		panic(err)
+		log.Print(err)
 	}
 
 	reportProblems := func(ev pq.ListenerEventType, err error) {
 		if err != nil {
-			log.Printf(err.Error())
+			log.Print(err.Error())
 		}
 	}
 
 	listener := pq.NewListener(psqlInfo, 10*time.Second, time.Minute, reportProblems)
 	err = listener.Listen("events")
 	if err != nil {
-		panic(err)
+		log.Print(err)
 	}
 	log.Printf("PSQL is now listening...")
 	for {
@@ -192,17 +193,17 @@ func elasticNotify(l *pq.Listener) {
 		select {
 		case n := <-l.Notify:
 			if verbose {
-				log.Printf("Incoming Data...")
+				log.Print("Incoming Data...")
 			}
 			var prettyJSON bytes.Buffer
 			err := json.Indent(&prettyJSON, []byte(n.Extra), "", "\t")
 			if err != nil {
-				log.Printf("Error in JSON output: ", err)
+				log.Print("Error in JSON output: ", err)
 				return
 			}
 			if verbose {
-				log.Printf("Raw JSON Output: ")
-				log.Printf(string(prettyJSON.Bytes()))
+				log.Print("Raw JSON Output: ")
+				log.Print(string(prettyJSON.Bytes()))
 			}
 
 			var message Message
@@ -337,7 +338,7 @@ func returnSingleTask_esapi(w http.ResponseWriter, hr *http.Request) {
 			// Build the request body.
 			data, err := json.Marshal(struct{ Title string }{Title: title})
 			if err != nil {
-				log.Fatalf("Error marshaling document: %s", err)
+				log.Printf("Error marshaling document: %s", err)
 			}
 
 			// Set up the request object.
@@ -351,7 +352,7 @@ func returnSingleTask_esapi(w http.ResponseWriter, hr *http.Request) {
 			// Perform the request with the client.
 			res, err := req.Do(context.Background(), es)
 			if err != nil {
-				log.Fatalf("Error getting response: %s", err)
+				log.Printf("Error getting response: %s", err)
 			}
 			defer res.Body.Close()
 
@@ -379,8 +380,8 @@ func returnSingleTask_esapi(w http.ResponseWriter, hr *http.Request) {
 	var buf bytes.Buffer
 	query := map[string]interface{}{
 		"query": map[string]interface{}{
-			"match": map[string]interface{}{
-				"title": key,
+			"query_string": map[string]interface{}{
+				"query": "title:" + key + " AND (privacy:0)",
 			},
 		},
 	}
@@ -631,8 +632,8 @@ func returnEmployeesByTask_esapi(w http.ResponseWriter, hr *http.Request) {
 	var buf bytes.Buffer
 	query := map[string]interface{}{
 		"query": map[string]interface{}{
-			"match": map[string]interface{}{
-				"taskid": key,
+			"query_string": map[string]interface{}{
+				"query": "taskid:" + key + " AND (privacy:0)",
 			},
 		},
 	}
@@ -649,17 +650,17 @@ func returnEmployeesByTask_esapi(w http.ResponseWriter, hr *http.Request) {
 		es.Search.WithPretty(),
 	)
 	if err != nil {
-		log.Fatalf("Error getting response: %s", err)
+		log.Printf("Error getting response: %s", err)
 	}
 	defer res.Body.Close()
 
 	if res.IsError() {
 		var e map[string]interface{}
 		if err8 := json.NewDecoder(res.Body).Decode(&e); err8 != nil {
-			log.Fatalf("Error parsing the response body: %s", err8)
+			log.Printf("Error parsing the response body: %s", err8)
 		} else {
 			// Print the response status and error information.
-			log.Fatalf("[%s] %s: %s",
+			log.Printf("[%s] %s: %s",
 				res.Status(),
 				e["error"].(map[string]interface{})["type"],
 				e["error"].(map[string]interface{})["reason"],
@@ -668,7 +669,7 @@ func returnEmployeesByTask_esapi(w http.ResponseWriter, hr *http.Request) {
 	}
 
 	if err4 := json.NewDecoder(res.Body).Decode(&r); err4 != nil {
-		log.Fatalf("Error parsing the response body: %s", err4)
+		log.Printf("Error parsing the response body: %s", err4)
 	}
 
 	// Print the response status, number of results, and request duration.
@@ -694,24 +695,19 @@ func returnEmployeesByTask_esapi(w http.ResponseWriter, hr *http.Request) {
 	}
 
 	data := byteToempid
-	var reddd = ""
-	//var borealis = ""
+	var elementString = ""
 	log.Printf(" *********** ID=%s,", data)
 	fmt.Println("/employees was called! esAPI results incoming     returnEmployeesByTask_esapi     key=: ")
-	//var r map[string]interface{}
 
 	arr := data
 	fmt.Println("The elements of the array are:")
-
-	// using for loop
 	for index, element := range arr {
-		reddd += string(element)
-		fmt.Println("At loop", index, " string value is", reddd)
+		elementString += string(element)
+		fmt.Println("At loop", index, " string value is", elementString)
 	}
 
-	//using regex
-	str1 := reddd
-
+	//using regex to strip bad characters and retain the employee id numbers
+	str1 := elementString
 	re := regexp.MustCompile(`[-]?\d[\d,]*[\.]?[\d{2}]*`)
 	fmt.Printf("Pattern: %v\n", re.String())                            // Print Pattern
 	fmt.Printf("String contains any match: %v\n", re.MatchString(str1)) // True
@@ -722,34 +718,26 @@ func returnEmployeesByTask_esapi(w http.ResponseWriter, hr *http.Request) {
 		fmt.Println(element)
 		submatchstring += element
 	}
-	var qwewq string = "["
-	gfdfg := string(submatchstring)
-	var asdfd []string = strings.Split(gfdfg, ",")
-	for i, p := range asdfd {
+	var builder1 string = "["
+	builder2 := string(submatchstring)
+	var builder3 []string = strings.Split(builder2, ",")
+	for i, p := range builder3 {
 		fmt.Println(p)
-		qwewq += "\"" + string(asdfd[i]) + "\"" + ","
-
+		builder1 += "\"" + string(builder3[i]) + "\"" + ","
 	}
-	qwewq2 := strings.TrimRight(qwewq, ",")
-	qwewq2 += "]"
-
-	//log.Println(qwewq)
-	log.Println(qwewq2)
-
-	////////////////////////////////////////////////////////////////////////
-	//	yr := strings.NewReader(qwewq2)
+	builder4 := strings.TrimRight(builder1, ",")
+	builder4 += "]"
+	// output of builder4 ["1","2","3","4","5","6"]
+	log.Println(builder4)
 
 	var buf2 bytes.Buffer
-	query2 := `{"query":{"terms":{"empid":` + qwewq2 + `}}}`
-	//yr.Read(&buf)
+	query2 := `{"query":{"terms":{"empid":` + builder4 + `}}}` //builds a query from the empid array regexed in builder4
 
 	if _, err := buf2.WriteString(query2); err != nil {
 		log.Print("Error encoding query: %s", err)
-
 	}
-	log.Print(query2)
-	log.Print(&buf2)
-	//strings.Replace(buf, "\\", "", -1)
+	//	log.Print(query2)
+	//	log.Print(&buf2)
 
 	// Perform the search request.
 	res2, err := es.Search(
@@ -772,150 +760,20 @@ func returnEmployeesByTask_esapi(w http.ResponseWriter, hr *http.Request) {
 			// Print the response status and indexed document version.
 			for _, hit2 := range tr["hits"].(map[string]interface{})["hits"].([]interface{}) {
 
-				hitSource2 := hit2.(map[string]interface{})["_source"]
-				hitEmployees2 := hitSource2.(map[string]interface{})["empid"] //_source
-
-				empBytes2, _ := json.MarshalIndent(hitSource2, "", "\t")
+				hSource2 := hit2.(map[string]interface{})["_source"]
+				empBytes2, _ := json.MarshalIndent(hSource2, "", "\t")
 				//byteToempid2, _ := json.Marshal(hitEmployees2)
 
 				log.Println(strings.Repeat("=", 37))
 
-				log.Printf(" * ID=%s, %s", hit2.(map[string]interface{})["_id"], hitEmployees2)
+				log.Printf(" * ID=%s", hit2.(map[string]interface{})["_id"])
 				w.Header().Set("Content-Type", "application/json")
 				w.Write(empBytes2)
-				log.Printf(" * ID=%s, %s", hit2.(map[string]interface{})["_id"], hitEmployees2)
+
 			}
 		}
-
-		// Print the response status and error information.
-
 	}
-}
-
-func nope_returnEmployeesByTask_esapi(w http.ResponseWriter, hr *http.Request) {
-	// /search/whois/assigned/{taskid}"
-	log.SetFlags(0)
-	var (
-		r  map[string]interface{}
-		wg sync.WaitGroup
-	)
-
-	es, err := elasticsearch.NewClient(cfg)
-	if err != nil {
-		log.Fatalf("Error creating the client: %s", err)
-	}
-
-	vars := mux.Vars(hr)
-	taskid_key := string(vars["taskid"])
-	fmt.Println("/employees was called! esAPI results incoming    returnEmpByTask_esapi     key=: " + taskid_key)
-	for i, taskid := range []string{taskid_key} {
-		go func(i int, taskid string) {
-			defer wg.Done()
-
-			// Build the request body.
-			data, err := json.Marshal(struct{ Taskid string }{Taskid: taskid})
-			if err != nil {
-				log.Fatalf("Error marshaling document: %s", err)
-			}
-
-			// Set up the request object.
-			req := esapi.IndexRequest{
-				Index:      myIndex, // <- this var is declared globally at the top of this file
-				DocumentID: strconv.Itoa(i + 1),
-				Body:       bytes.NewReader(data),
-				Refresh:    "true",
-			}
-
-			// Perform the request with the client.
-			res, err := req.Do(context.Background(), es)
-			if err != nil {
-				log.Fatalf("Error getting response: %s", err)
-			}
-			defer res.Body.Close()
-
-			if res.IsError() {
-				log.Printf("[%s] Error indexing document ID=%d", res.Status(), i+1)
-			} else {
-				// Deserialize the response into a map.
-				var r map[string]interface{}
-				if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
-					log.Printf("Error parsing the response body: %s", err)
-				} else {
-					// Print the response status and indexed document version.
-					log.Printf("[%s] %s; version=%d", res.Status(), r["result"], int(r["_version"].(float64)))
-				}
-			}
-		}(i, taskid)
-	}
-
-	wg.Wait()
-
-	log.Println(strings.Repeat("-", 37))
-
-	// 3. Search for the indexed documents
-	//
-	// Build the request body.
-	var buf bytes.Buffer
-	query := map[string]interface{}{
-		"query": map[string]interface{}{
-			"match": map[string]interface{}{
-				"taskid": taskid_key,
-			},
-		},
-	}
-	if err := json.NewEncoder(&buf).Encode(query); err != nil {
-		log.Fatalf("Error encoding query: %s", err)
-	}
-
-	// Perform the search request.
-	res, err := es.Search(
-		es.Search.WithContext(context.Background()),
-		es.Search.WithIndex(myIndex),
-		es.Search.WithBody(&buf),
-		es.Search.WithTrackTotalHits(true),
-		es.Search.WithPretty(),
-	)
-	if err != nil {
-		log.Fatalf("Error getting response: %s", err)
-	}
-	defer res.Body.Close()
-
-	if res.IsError() {
-		var e map[string]interface{}
-		if err := json.NewDecoder(res.Body).Decode(&e); err != nil {
-			log.Fatalf("Error parsing the response body: %s", err)
-		} else {
-			// Print the response status and error information.
-			log.Fatalf("[%s] %s: %s",
-				res.Status(),
-				e["error"].(map[string]interface{})["type"],
-				e["error"].(map[string]interface{})["reason"],
-			)
-		}
-	}
-
-	if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
-		log.Fatalf("Error parsing the response body: %s", err)
-	}
-	// Print the response status, number of results, and request duration.
-	log.Printf(
-		"[%s] %d hits; took: %dms",
-		res.Status(),
-		int(r["hits"].(map[string]interface{})["total"].(map[string]interface{})["value"].(float64)),
-		int(r["took"].(float64)),
-	)
-	// Print the ID and document source for each hit.
-	for _, hit := range r["hits"].(map[string]interface{})["hits"].([]interface{}) {
-		empBytes, _ := json.MarshalIndent(hit, "", "\t")
-
-		w.Header().Set("Content-Type", "application/json")
-		w.Write(empBytes)
-
-		log.Printf(" * ID=%s, %s", hit.(map[string]interface{})["_id"], hit.(map[string]interface{})["_source"])
-	}
-
-	log.Println(strings.Repeat("=", 37))
-}
+} // ✔ //
 
 func returnAllEmployees_psql(w http.ResponseWriter, r *http.Request) {
 	log.Println("/employees was called! apiServer.go:19 returnAllEmployees")
@@ -1109,84 +967,6 @@ func returnPairedTask_byID_psql(w http.ResponseWriter, r *http.Request) {
 	//defer rows.Close()
 	defer db.Close()
 
-}
-
-func another_way_to_search_ES_API(f string, s string) {
-
-	fieldName = f
-	searchTerm = s
-	query = `{"query": {"term": {"` + fieldName + `" : "` + searchTerm + `"}}, "size": 10}`
-	client, err := elasticsearch.NewClient(cfg)
-	if err != nil {
-		log.Fatalf("Elasticsearch connection error:", err)
-	}
-
-	var mapResp map[string]interface{}
-	var buf bytes.Buffer
-
-	// Concatenate a string from query for reading
-	var b strings.Builder
-	b.WriteString(query)
-	read := strings.NewReader(b.String())
-
-	fmt.Println("read:", read)
-	fmt.Println("read TYPE:", reflect.TypeOf(read))
-	fmt.Println("JSON encoding:", json.NewEncoder(&buf).Encode(read))
-
-	// Attempt to encode the JSON query and look for errors
-	if err := json.NewEncoder(&buf).Encode(read); err != nil {
-		log.Fatalf("Error encoding query: %s", err)
-
-		// Query is a valid JSON object
-	} else {
-		fmt.Println("json.NewEncoder encoded query:", read, "\n")
-
-		// Pass the JSON query to the Golang client's Search() method
-		res, err := client.Search(
-			client.Search.WithContext(ctx),
-			client.Search.WithIndex(searchTerm),
-			client.Search.WithBody(read),
-			client.Search.WithTrackTotalHits(true),
-			client.Search.WithPretty(),
-		)
-
-		// Check for any errors returned by API call to Elasticsearch
-		if err != nil {
-			log.Fatalf("Elastic API ERROR:", err)
-			// If no errors are returned, parse esapi.Response object
-		} else {
-			fmt.Println("res TYPE:", reflect.TypeOf(res))
-
-			// Close the result body when the function call is complete
-			defer res.Body.Close()
-
-			// Decode the JSON response and set a pointer
-			if err := json.NewDecoder(res.Body).Decode(&mapResp); err != nil {
-				log.Fatalf("Error parsing the response body: %s", err)
-
-				// If no error, then convert response to a map[string]interface
-			} else {
-
-				fmt.Println("mapResp TYPE:", reflect.TypeOf(mapResp), "\n")
-
-				// Iterate the document "hits" returned by API call
-
-				for _, hit := range mapResp["hits"].(map[string]interface{})["hits"].([]interface{}) {
-
-					// Parse the attributes/fields of the document
-					doc := hit.(map[string]interface{})
-					// The "_source" data is another map interface nested inside of doc
-					source := doc["_source"]
-					fmt.Println("doc _source:", reflect.TypeOf(source))
-
-					// Get the document's _id and print it out along with _source data
-					docID := doc["_id"]
-					fmt.Println("docID:", docID)
-					fmt.Println("_source:", source, "\n")
-				} // end of response iteration
-			}
-		}
-	}
 }
 
 func othervars(w http.ResponseWriter, r *http.Request) {

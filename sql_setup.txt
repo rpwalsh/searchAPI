@@ -233,6 +233,11 @@ SELECT  title, empid, fname, lname FROM employees INNER JOIN tasks ON empid=ANY(
 // vv here is the psql to get private tasks
 SELECT  title, empid, fname, lname FROM employees INNER JOIN tasks ON empid=ANY(assignedto) WHERE privacy != 0 AND title IN ('$1');
 
+// vv here is how to change a task in the db (this will update to elastic automatically through the application)
+UPDATE public.tasks
+	SET title=('not so secret scrum meeting'), privacy=0
+	WHERE taskid=<TASKID>;
+
 //Elastic Mappings (if you need them) us Kibana to get the es cluster index to recast the UUID data type as 'Keyword'
 
     PUT /test_index
@@ -274,35 +279,3 @@ SELECT  title, empid, fname, lname FROM employees INNER JOIN tasks ON empid=ANY(
     }
 ]
 
-
--- Table: public.joined_table
-
--- DROP TABLE IF EXISTS public.joined_table;
-
-CREATE TABLE IF NOT EXISTS public.joined_table
-(
-    unitid uuid,
-    taskid integer,
-    assignedto integer[],
-    title character varying(255) COLLATE pg_catalog."default",
-    privacy integer,
-    uniqid uuid,
-    empid integer,
-    fname character varying(255) COLLATE pg_catalog."default",
-    lname character varying(255) COLLATE pg_catalog."default"
-)
-
-TABLESPACE pg_default;
-
-ALTER TABLE IF EXISTS public.joined_table
-    OWNER to postgres;
-
--- Trigger: tasks_notify_event_99
-
--- DROP TRIGGER IF EXISTS tasks_notify_event_99 ON public.joined_table;
-
-CREATE TRIGGER tasks_notify_event_99
-    AFTER INSERT OR DELETE OR UPDATE
-    ON public.joined_table
-    FOR EACH ROW
-    EXECUTE FUNCTION public.notify_event_99();
