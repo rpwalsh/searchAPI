@@ -201,6 +201,33 @@ pre {
   gap: 8px;
 }
 
+.demo-card {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 8px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid rgba(100, 244, 188, 0.18);
+  border-radius: 8px;
+  background: rgba(100, 244, 188, 0.06);
+}
+
+.demo-card span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.demo-card strong {
+  color: var(--mint);
+  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 13px;
+}
+
+.demo-card button {
+  grid-column: 1 / -1;
+  width: 100%;
+}
+
 main {
   min-width: 0;
   padding: 24px;

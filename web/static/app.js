@@ -1,5 +1,5 @@
 const state = {
-  apiKey: localStorage.getItem("searchapi.key") || "",
+  apiKey: localStorage.getItem("searchapi.key") || "demo-key",
   health: null,
   metrics: {},
   assets: [],
@@ -80,6 +80,14 @@ function bindActions() {
     state.apiKey = $("#apiKey").value.trim();
     localStorage.setItem("searchapi.key", state.apiKey);
     toast("API key stored locally");
+    loadAll();
+  });
+
+  $("#demoKeyBtn").addEventListener("click", () => {
+    state.apiKey = "demo-key";
+    $("#apiKey").value = state.apiKey;
+    localStorage.setItem("searchapi.key", state.apiKey);
+    toast("Demo key active");
     loadAll();
   });
 

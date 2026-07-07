@@ -467,10 +467,6 @@ func (s *Store) IngestTelemetryBatch(ctx context.Context, samples []TelemetrySam
 			accepted = append(accepted, sample)
 		}
 
-		if result.AcceptedSamples == 0 {
-			return errors.New("all telemetry samples rejected")
-		}
-
 		payload := map[string]any{
 			"site_id":          s.cfg.SiteID,
 			"accepted_samples": result.AcceptedSamples,

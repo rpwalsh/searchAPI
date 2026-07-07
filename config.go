@@ -25,17 +25,19 @@ type Config struct {
 }
 
 func LoadConfig() (Config, error) {
+	environment := env("APP_ENV", "demo")
+	production := isProduction(environment)
 	cfg := Config{
-		Environment:     env("APP_ENV", "local"),
+		Environment:     environment,
 		SiteID:          env("SITE_ID", "lab-01"),
 		Address:         env("API_ADDR", ":8080"),
 		DatabaseURL:     env("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/telemetry?sslmode=disable"),
-		APIKey:          strings.TrimSpace(os.Getenv("API_KEY")),
+		APIKey:          env("API_KEY", defaultDemoKey(production)),
 		ElasticAPIKey:   strings.TrimSpace(os.Getenv("ELASTICSEARCH_API_KEY")),
 		ElasticIndex:    env("ELASTICSEARCH_INDEX", "hardware-telemetry-events"),
 		IngestMaxBytes:  envInt64("INGEST_MAX_BYTES", 16<<20),
 		ShutdownTimeout: time.Duration(envInt64("SHUTDOWN_TIMEOUT_SECONDS", 20)) * time.Second,
-		SeedOnStart:     envBool("SEED_ON_START", false),
+		SeedOnStart:     envBool("SEED_ON_START", !production),
 	}
 
 	if _, err := url.Parse(cfg.DatabaseURL); err != nil {
@@ -51,6 +53,22 @@ func LoadConfig() (Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func defaultDemoKey(production bool) string {
+	if production {
+		return ""
+	}
+	return "demo-key"
+}
+
+func isProduction(environment string) bool {
+	switch strings.ToLower(strings.TrimSpace(environment)) {
+	case "prod", "production":
+		return true
+	default:
+		return false
+	}
 }
 
 func env(key, fallback string) string {
@@ -86,10 +104,8 @@ func envInt64(key string, fallback int64) int64 {
 }
 
 func logLevel(environment string) slog.Level {
-	switch strings.ToLower(environment) {
-	case "prod", "production":
+	if isProduction(environment) {
 		return slog.LevelInfo
-	default:
-		return slog.LevelDebug
 	}
+	return slog.LevelDebug
 }

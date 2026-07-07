@@ -22,13 +22,10 @@ The implementation is designed for forward-deployed engineering work: take a cus
 
 ```powershell
 $env:DATABASE_URL = "postgres://postgres:postgres@localhost:5432/telemetry?sslmode=disable"
-$env:SITE_ID = "customer-sea-01"
-$env:API_KEY = "change-me"
-$env:SEED_ON_START = "true"
 go run .
 ```
 
-Open `http://localhost:8080/` for the operator console. The browser UI is intentionally thin: it only renders backend state and calls the API. Validation, threshold alarms, replay handling, seed data, and search behavior stay on the Go backend.
+Open `http://localhost:8080/` for the operator console. Demo mode is the default: `APP_ENV=demo`, `API_KEY=demo-key`, and `SEED_ON_START=true` unless you override them. The browser UI is intentionally thin: it only renders backend state and calls the API. Validation, threshold alarms, replay handling, seed data, and search behavior stay on the Go backend.
 
 Elasticsearch is optional. Without it, `/api/v1/search` falls back to PostgreSQL audit-event search.
 
