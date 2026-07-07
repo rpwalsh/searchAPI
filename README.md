@@ -8,6 +8,7 @@ The implementation is designed for forward-deployed engineering work: take a cus
 
 ## What Changed
 
+- Added a dark glass operator console served by the Go backend at `/`.
 - Replaced the legacy employee/task demo schema with hardware telemetry domain models.
 - Moved all deploy-time settings to environment variables.
 - Added typed JSON validation for assets, procedures, runs, channels, samples, alarms, and annotations.
@@ -26,6 +27,8 @@ $env:API_KEY = "change-me"
 $env:SEED_ON_START = "true"
 go run .
 ```
+
+Open `http://localhost:8080/` for the operator console. The browser UI is intentionally thin: it only renders backend state and calls the API. Validation, threshold alarms, replay handling, seed data, and search behavior stay on the Go backend.
 
 Elasticsearch is optional. Without it, `/api/v1/search` falls back to PostgreSQL audit-event search.
 

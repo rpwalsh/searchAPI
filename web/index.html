@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SearchAPI Console</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="rail">
+        <div class="mark">
+          <span class="mark-glyph">S</span>
+          <span>
+            <strong>SearchAPI</strong>
+            <small>Telemetry Console</small>
+          </span>
+        </div>
+        <nav class="tabs" aria-label="Workspace">
+          <button class="tab active" data-panel="dashboard">Dashboard</button>
+          <button class="tab" data-panel="catalog">Catalog</button>
+          <button class="tab" data-panel="ingest">Ingest</button>
+          <button class="tab" data-panel="events">Events</button>
+        </nav>
+        <form class="auth" id="authForm">
+          <label for="apiKey">API key</label>
+          <div class="secret-row">
+            <input id="apiKey" name="apiKey" type="password" autocomplete="off" />
+            <button type="submit">Set</button>
+          </div>
+        </form>
+      </aside>
+
+      <main>
+        <header class="topbar">
+          <div>
+            <h1>Hardware Telemetry Workspace</h1>
+            <p id="siteLine">Waiting for backend status</p>
+          </div>
+          <div class="actions">
+            <button id="refreshBtn" class="secondary">Refresh</button>
+            <button id="seedBtn">Seed</button>
+          </div>
+        </header>
+
+        <section class="panel active" id="dashboard">
+          <div class="status-grid">
+            <article class="metric">
+              <span>Database</span>
+              <strong id="databaseState">unknown</strong>
+            </article>
+            <article class="metric">
+              <span>Elasticsearch</span>
+              <strong id="elasticState">unknown</strong>
+            </article>
+            <article class="metric">
+              <span>Samples</span>
+              <strong id="sampleCount">0</strong>
+            </article>
+            <article class="metric">
+              <span>Alarms</span>
+              <strong id="alarmCount">0</strong>
+            </article>
+          </div>
+
+          <div class="workspace-grid">
+            <section class="surface">
+              <div class="surface-head">
+                <h2>Live Strip</h2>
+                <span id="stripLabel">latest accepted samples</span>
+              </div>
+              <canvas id="telemetryCanvas" width="900" height="260"></canvas>
+            </section>
+            <section class="surface">
+              <div class="surface-head">
+                <h2>Open Alarms</h2>
+                <span id="alarmLabel">0 active</span>
+              </div>
+              <div class="list" id="alarmList"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="panel" id="catalog">
+          <div class="workspace-grid three">
+            <section class="surface">
+              <div class="surface-head">
+                <h2>Assets</h2>
+                <button class="small" data-open="assetDialog">New</button>
+              </div>
+              <div class="list" id="assetList"></div>
+            </section>
+            <section class="surface">
+              <div class="surface-head">
+                <h2>Runs</h2>
+                <button class="small" data-open="runDialog">New</button>
+              </div>
+              <div class="list" id="runList"></div>
+            </section>
+            <section class="surface">
+              <div class="surface-head">
+                <h2>Channels</h2>
+                <button class="small" data-open="channelDialog">New</button>
+              </div>
+              <div class="list" id="channelList"></div>
+            </section>
+          </div>
+        </section>
+
+        <section class="panel" id="ingest">
+          <div class="workspace-grid">
+            <section class="surface">
+              <div class="surface-head">
+                <h2>Gateway Stream</h2>
+                <span>JSON or NDJSON</span>
+              </div>
+              <textarea id="streamBody" spellcheck="false"></textarea>
+              <div class="form-actions">
+                <button id="loadExampleBtn" class="secondary">Example</button>
+                <button id="sendStreamBtn">Ingest</button>
+              </div>
+            </section>
+            <section class="surface">
+              <div class="surface-head">
+                <h2>Result</h2>
+                <span id="ingestState">idle</span>
+              </div>
+              <pre id="ingestResult"></pre>
+            </section>
+          </div>
+        </section>
+
+        <section class="panel" id="events">
+          <div class="workspace-grid">
+            <section class="surface">
+              <div class="surface-head">
+                <h2>Search</h2>
+                <span>backend query</span>
+              </div>
+              <form class="search-row" id="searchForm">
+                <input id="searchQuery" type="search" placeholder="threshold, gateway, run, operator" />
+                <button type="submit">Search</button>
+              </form>
+              <div class="list" id="searchResults"></div>
+            </section>
+            <section class="surface">
+              <div class="surface-head">
+                <h2>Audit Events</h2>
+                <span id="eventLabel">latest</span>
+              </div>
+              <div class="list" id="eventList"></div>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="assetDialog">
+      <form method="dialog" class="dialog-form" id="assetForm">
+        <h2>New Asset</h2>
+        <label>Name<input name="name" required /></label>
+        <label>Kind<input name="kind" value="test_stand" required /></label>
+        <label>Serial<input name="serial_number" /></label>
+        <label>Location<input name="location" /></label>
+        <menu>
+          <button value="cancel" class="secondary">Cancel</button>
+          <button value="default">Create</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <dialog id="runDialog">
+      <form method="dialog" class="dialog-form" id="runForm">
+        <h2>New Test Run</h2>
+        <label>Asset ID<input name="asset_id" required /></label>
+        <label>Run Number<input name="run_number" required /></label>
+        <label>Operator<input name="operator" /></label>
+        <menu>
+          <button value="cancel" class="secondary">Cancel</button>
+          <button value="default">Create</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <dialog id="channelDialog">
+      <form method="dialog" class="dialog-form" id="channelForm">
+        <h2>New Channel</h2>
+        <label>Asset ID<input name="asset_id" required /></label>
+        <label>Name<input name="name" required /></label>
+        <label>Unit<input name="unit" /></label>
+        <label>Alarm Max<input name="alarm_max" type="number" step="0.001" /></label>
+        <menu>
+          <button value="cancel" class="secondary">Cancel</button>
+          <button value="default">Create</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <div class="toast" id="toast" role="status"></div>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

@@ -51,6 +51,7 @@ func NewRouter(store *Store, cfg Config, logger *slog.Logger) http.Handler {
 	mux.HandleFunc("GET /api/v1/events", api.listEvents)
 	mux.HandleFunc("GET /api/v1/search", api.search)
 	mux.HandleFunc("POST /api/v1/onboarding/seed", api.seed)
+	registerUI(mux, api)
 
 	return api.recoverPanic(api.observe(api.authenticate(securityHeaders(mux))))
 }
@@ -68,7 +69,7 @@ func (a *API) authenticate(next http.Handler) http.Handler {
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/healthz" || r.URL.Path == "/readyz" {
+		if isPublicPath(r) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -82,6 +83,19 @@ func (a *API) authenticate(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func isPublicPath(r *http.Request) bool {
+	if r.Method != http.MethodGet {
+		return false
+	}
+	if r.URL.Path == "/" || r.URL.Path == "/ui" || strings.HasPrefix(r.URL.Path, "/ui/") {
+		return true
+	}
+	if r.URL.Path == "/healthz" || r.URL.Path == "/readyz" {
+		return true
+	}
+	return strings.HasPrefix(r.URL.Path, "/static/")
 }
 
 func (a *API) observe(next http.Handler) http.Handler {
