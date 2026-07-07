@@ -1,0 +1,4 @@
+{"run_id":"run_seed_acceptance_001","channel_id":"chan_accel_x","gateway_id":"gateway-sea-01","timestamp":"2026-07-07T19:00:01Z","numeric_value":2.4,"quality":"good","replay_key":"gateway-sea-01-accel-x-0001"}
+{"run_id":"run_seed_acceptance_001","channel_id":"chan_accel_x","gateway_id":"gateway-sea-01","timestamp":"2026-07-07T19:00:02Z","numeric_value":8.1,"quality":"good","replay_key":"gateway-sea-01-accel-x-0002","metadata":{"phase":"threshold-check"}}
+{"run_id":"run_seed_acceptance_001","channel_id":"chan_case_temp","gateway_id":"gateway-sea-01","timestamp":"2026-07-07T19:00:03Z","numeric_value":42.7,"quality":"good","replay_key":"gateway-sea-01-temp-0001"}
+{"run_id":"run_seed_acceptance_001","channel_id":"chan_bus_voltage","gateway_id":"gateway-sea-01","timestamp":"2026-07-07T19:00:04Z","numeric_value":27.2,"quality":"good","replay_key":"gateway-sea-01-bus-v-0001"}

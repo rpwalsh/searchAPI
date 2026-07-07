@@ -1,52 +1,91 @@
 # SearchAPI
 
-Field-deployed search and telemetry indexing API in Go.
+Field-deployed hardware telemetry ingestion, audit, and search API in Go.
 
-SearchAPI is a compact Go service that ties PostgreSQL change events to an Elasticsearch-backed query surface. It was originally built as a technical exercise around employee/task search, but the architecture maps cleanly to customer-site deployment work: ingest structured operational records, listen for database-side events, push normalized documents into a search index, and expose simple HTTP endpoints for fast investigation by operators and engineers.
+SearchAPI is a production-shaped backend for customer-site hardware test environments. It models assets, test runs, telemetry channels, procedures, alarms, operator annotations, and replayable audit events; ingests JSON or NDJSON streams from gateways/test benches; stores canonical state in PostgreSQL; and optionally mirrors audit events into Elasticsearch for fast investigation.
 
-## Why It Fits Forward-Deployed Hardware Work
+The implementation is designed for forward-deployed engineering work: take a customer workspace from zero to useful, keep the install path explicit, support restricted/on-prem environments, and leave operators with health checks, metrics, seed data, and a searchable event trail.
 
-Modern hardware test teams need the same backend shape: local data capture, event-driven indexing, quick search over runs/assets/operators/tasks, and a clear path from lab prototype to customer workspace. Public descriptions of the target domain emphasize real-time hardware testing, telemetry/log/video/simulation data, edge execution, air-gapped or restricted deployments, and deployment engineers who own customer onboarding from discovery through production handoff. This repository demonstrates the backend instincts behind that work: Go services, Postgres schemas, Elasticsearch queries, HTTP APIs, auth boundaries, runbooks, and field-adaptable integration patterns.
+## What Changed
 
-This is not presented as a finished hardware test platform. It is a deliberately small artifact showing how I approach the first mile of a customer deployment: define the data model, stand up the service, wire event notifications, make data searchable, document the install path, and leave clear seams for the next client-specific integration.
+- Replaced the legacy employee/task demo schema with hardware telemetry domain models.
+- Moved all deploy-time settings to environment variables.
+- Added typed JSON validation for assets, procedures, runs, channels, samples, alarms, and annotations.
+- Added stream ingestion at `POST /api/v1/ingest/stream` for JSON arrays, single objects, or NDJSON.
+- Added replay keys on telemetry samples and audit events for deterministic replay/audit behavior.
+- Added threshold alarm generation from channel limits.
+- Added Postgres migrations, `pg_notify` event publication, and optional Elasticsearch indexing.
+- Added health, readiness, metrics, search, event replay, and onboarding seed endpoints.
 
-## Technical Highlights
+## Run Locally
 
-- Go HTTP API using `gorilla/mux`
-- PostgreSQL-backed source of record
-- `pq.Listener` event loop for database notifications
-- Elasticsearch indexing and query endpoints
-- Basic-auth wrapper scaffold
-- CORS support for browser-based operational tools
-- SQL bootstrap notes and deployment preflight checklist
-
-## Representative Endpoints
-
-```text
-GET /employees
-GET /employees/uuid/{uniqid}
-GET /employees/empid/{empid}
-GET /tasks
-GET /tasks/name/{title}
-GET /whois
-GET /whois/{taskid}
-
-GET /search/tasks/name/{title}
-GET /search/employees/uuid/{uniqid}
-GET /search/whois/assigned/{taskid}
+```powershell
+$env:DATABASE_URL = "postgres://postgres:postgres@localhost:5432/telemetry?sslmode=disable"
+$env:SITE_ID = "customer-sea-01"
+$env:API_KEY = "change-me"
+$env:SEED_ON_START = "true"
+go run .
 ```
 
-## Deployment Readiness Signals
+Elasticsearch is optional. Without it, `/api/v1/search` falls back to PostgreSQL audit-event search.
 
-The repo includes `sql_setup.txt` and `preflight_checklist.txt` because the interesting part of forward-deployed engineering is rarely just writing code. The work is making a service run inside a real environment: credentials, local services, schema shape, operator assumptions, security boundaries, and repeatable startup steps. SearchAPI keeps those concerns visible instead of hiding them behind a demo.
+```powershell
+$env:ELASTICSEARCH_URL = "http://localhost:9200"
+$env:ELASTICSEARCH_INDEX = "hardware-telemetry-events"
+```
 
-## How I Would Extend It For A Hardware Telemetry Client
+## Core Endpoints
 
-1. Replace the employee/task schema with assets, test runs, channels, alarms, procedures, and operator annotations.
-2. Move configuration into environment variables or a deployment manifest for on-prem and air-gapped installs.
-3. Add stream ingestion from test benches or gateway devices.
-4. Add typed validation and replayable event logs for auditability.
-5. Package a repeatable customer onboarding path with seed data, health checks, and observability.
+```text
+GET  /healthz
+GET  /readyz
+GET  /metrics
+
+GET  /api/v1/assets
+POST /api/v1/assets
+GET  /api/v1/assets/{id}
+
+GET  /api/v1/procedures
+POST /api/v1/procedures
+GET  /api/v1/test-runs
+POST /api/v1/test-runs
+GET  /api/v1/channels
+POST /api/v1/channels
+
+POST /api/v1/ingest/stream
+GET  /api/v1/alarms
+GET  /api/v1/annotations
+POST /api/v1/annotations
+GET  /api/v1/events
+GET  /api/v1/search?q=vibration
+POST /api/v1/onboarding/seed
+```
+
+When `API_KEY` is set, protected endpoints accept either:
+
+```text
+Authorization: Bearer <API_KEY>
+X-API-Key: <API_KEY>
+```
+
+## Gateway Stream Example
+
+`POST /api/v1/ingest/stream` accepts newline-delimited JSON for gateway-style streaming:
+
+```json
+{"run_id":"run_seed_acceptance_001","channel_id":"chan_accel_x","gateway_id":"gateway-sea-01","timestamp":"2026-07-07T19:00:01Z","numeric_value":2.4,"quality":"good","replay_key":"gateway-sea-01-0001"}
+{"run_id":"run_seed_acceptance_001","channel_id":"chan_accel_x","gateway_id":"gateway-sea-01","timestamp":"2026-07-07T19:00:02Z","numeric_value":8.1,"quality":"good","replay_key":"gateway-sea-01-0002"}
+```
+
+The second sample crosses the seeded acceleration threshold and creates an open alarm.
+
+## Customer Onboarding Path
+
+1. Set `DATABASE_URL`, `SITE_ID`, and `API_KEY` in a site-specific environment file.
+2. Start the service once; migrations run automatically.
+3. Run `POST /api/v1/onboarding/seed` to create a test stand, procedure, run, channels, and sample telemetry.
+4. Confirm `/healthz`, `/readyz`, `/metrics`, `/api/v1/events`, and `/api/v1/search?q=threshold`.
+5. Point a gateway or bench script at `/api/v1/ingest/stream` with replay keys enabled.
 
 ## Status
 
